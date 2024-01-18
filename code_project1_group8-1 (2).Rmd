@@ -1,0 +1,219 @@
+---
+title: "Project 1"
+author: "Group 8"
+date: "2022-10-04"
+output: html_document
+---
+
+### Introduction 
+
+Our team wanted to examine how different types of meat sold throughout the year. Our initial expectations were that some types would sell well at certain times of the year. Some of our assumptions were turkey selling well in November because of Thanksgiving, pork (particularly ham) selling well in December and April because of Christmas and Easter, and beef selling better from May to August because more people will be grilling out during these summer months. By joining the "completejourney" transactions and products datasets and performing regular expressions to identify relevant products, we found that many of our assumptions were true. Ham sold better in both April and December compared to the months before and after, and beef had highest sales in the summer months. However, one shocking find was that turkey sales were pretty consistent throughout the whole year. Management should be concerned about this, because the data shows that consumers are buying many related Thanksgiving products such as pies in November, yet are evidently getting their turkeys elsewhere. We believe that better marketing of our turkey products can help us increase our Thanksgiving market share.
+
+### Packages Required
+
+The following packages were used in our exploratory analysis: 
+
+```{r, message=FALSE, warning=FALSE}
+
+library(completejourney) # data source for this project
+library(tidyverse) # helps create tidy data
+library(dplyr) # transforms and manipulates data 
+library(stringr) # provides tools to work with character strings 
+library(ggplot2) # visualizes data through plots 
+library(lubridate) # provides functions to work with date-times
+
+```
+
+
+### Exploratory Analysis
+
+#### Tidying Data 
+
+Our first step was to create our transactions variable by using the entire transactions dataset instead of just the sample set. 
+
+```{r, message=FALSE, warning=FALSE}
+
+transactions <- get_transactions()
+
+```
+
+Next, we joined the transactions and products data by product id so that we could the quantity and sales value of each product. From there, we created new columns in the dataframe (joined_sales) that put products into specific meat categories based on character strings in each product's "product_type" column. We made sure to leave out product types such as "shampoo" or "hamburger buns" which contain the word ham in it so that our data is tidy and relevant. Finally, we made sure to separate lunchmeat (deli style) from bulk meat (whole turkeys, whole hams, etc.), since we are interested in looking at larger cuts of meat.
+
+```{r, message=FALSE, warning=FALSE}
+
+joined_sales <- transactions %>%
+  inner_join(products) %>%
+  filter(!str_detect(product_type, c("SHAMPOO", "GRAHAM", "BUNS"))) %>%
+  mutate(month = month(transaction_timestamp)) %>%
+  mutate(meat = case_when(
+    str_detect(product_type, "CHICKEN")   ~ "CHICKEN",
+    str_detect(product_type, "BEEF")      ~ "BEEF",
+    str_detect(product_type, "TURKEY")    ~ "TURKEY",
+    str_detect(product_type, "HAM")       ~ "HAM",
+    str_detect(product_type, "LUNCHMEAT") ~ "LUNCHMEAT",
+    TRUE ~ "NONE"
+  )) %>%
+  mutate(month_name = case_when(
+    month == 1 ~ "January",
+    month == 2 ~ "February",
+    month == 3 ~ "March",
+    month == 4 ~ "April",
+    month == 5 ~ "May",
+    month == 6 ~ "June",
+    month == 7 ~ "July",
+    month == 8 ~ "August",
+    month == 9 ~ "September",
+    month == 10 ~ "October",
+    month == 11 ~ "November",
+    month == 12 ~ "December",
+    TRUE ~ "NONE"
+  ))
+  
+```
+
+<br>
+
+#### Plot #1
+
+After tidying our data, we plotted the different types of meat by sales value and month. This is where we can see how beef and ham performed as expected, with beef having highest sales from May to August and ham having higher sales in December and April than the surrounding months. However, this is were we see that turkey remains largely similar constant in sales throughout the whole year, staying right around $500 in sales value each month.
+
+```{r, message=FALSE, warning=FALSE}
+
+joined_sales$month_name <- factor(joined_sales$month_name, levels = c("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"))
+
+joined_sales$meat <- factor(joined_sales$meat, levels = c("BEEF", "CHICKEN", "HAM", "TURKEY", "LUNCHMEAT"))
+
+joined_sales %>%
+  filter(meat == c("BEEF", "CHICKEN", "HAM", "TURKEY", "LUNCHMEAT")) %>%
+  group_by(sales_value, month_name, meat) %>%
+  summarize(total_sales = sum(sales_value)) %>%
+  ggplot(aes(x = meat, y = total_sales, fill = meat)) +
+    geom_col(show.legend = FALSE) +
+    scale_y_continuous(labels=scales::dollar_format()) +
+    facet_wrap(~ month_name) +
+    scale_fill_manual(values = c("darkorange3", "darkorange3", "darkorange3", "darkorange4", "darkorange3")) +
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 6)) +
+    labs(
+      title = "Meat Sales by Month",
+      x = 'Meat Category ',
+      y = 'Total Sales'
+    )
+
+```
+
+<br>
+
+#### Plot #2
+
+Since we were surprised by what the previous plot showed, we wanted to look at some of the demographics that are purchasing turkey. To look at the holiday months, we filtered for months 11 and 12. We then created scatter plots based on total sales and total quantity sold of turkey. We then showed Marital Status by color and facet wrapped around the amount of kids. As you can see, the majoriy of sales around this time comes from unmarried people with 0 kids. This shows that there is certainly a hole in sales to families.
+
+
+```{r, message=FALSE, warning=FALSE}
+
+joined_sales %>%
+  inner_join(demographics) %>%
+  filter(meat == "TURKEY", month == c(11, 12)) %>%
+  group_by(meat, sales_value, quantity, kids_count, marital_status) %>%
+  summarize(total_sales = sum(sales_value), total_quantity = sum(quantity)) %>%
+  ggplot(aes(x = total_quantity, y = total_sales, color = marital_status)) +
+    geom_point() +
+    facet_wrap(~ kids_count) +
+    scale_y_continuous(name = "Total Sales", labels = scales::dollar) +
+    scale_x_continuous("Quantity") +
+    labs(
+      title = "Turkey Sales by Marital Status and Kids Count",
+      x = 'Total Quantity',
+      y = 'Total Sales',
+      color = "Marital Status") +
+    scale_color_manual(values = c("orange", "brown"))
+
+```
+
+<br>
+
+#### Plot #3 
+
+Since we were surprised with the lack of turkey sales in November, we wanted to see how other products associated with Thanksgiving fared in November. To do this, we went through a process similar to how we categorized meat earlier. We took the various product type character strings of common Thanksgiving products and categorized them into one common product type for each food item using the case_when() function, making sure to include only product types relevant to Thanksgiving. For example, with pies we didn't include the product type "PIES: CREAM/MERINGUE" because Thanksgiving pies are typically pumpkin or fruit/nut pies. 
+
+```{r, message=FALSE, warning=FALSE}
+
+thxgiving_products <- joined_sales %>%
+  mutate(thanksgiving_products = case_when(
+    str_detect(product_type, "PIES: PUMPKIN/CUSTARD")          ~ "Pies",
+    str_detect(product_type, "PIES: FRUIT/NUT")                ~ "Pies",
+    str_detect(product_type, "FROZEN FRUIT PIES  & COBBLERS")  ~ "Pies",
+    str_detect(product_type, "FRZN PIE SHELLS PASTRY SHELL")   ~ "Pies",
+    str_detect(product_type, "PIE CRUST MIXES & SHELLS")       ~ "Pies",
+    str_detect(product_type, "CRANBERRY SAUCE")                ~ "Cranberry",
+    str_detect(product_type, "STUFFING MIXES")                 ~ "Stuffing",
+    str_detect(product_type, "POTATOES SWEET")                 ~ "Sweet Potatoes",
+    str_detect(product_type, "POTATOES SWEET&YAMS")            ~ "Sweet Potatoes",
+    TRUE ~ "NONE"
+  ))
+
+thxgiving_products$thanksgiving_products <- factor(thxgiving_products$thanksgiving_products, levels = c("Pies", "Stuffing", "Sweet Potatoes", "Cranberry"))
+  
+```
+
+
+
+After cleaning the Thanksgiving product data, we plotted out the sales of each new product type by month. The results were what were expecting the turkey sales to be, with November being the clear leader in sales for all of these products. 
+```{r, message=FALSE, warning=FALSE}
+
+thxgiving_products %>%
+  filter(thanksgiving_products == c("Pies", "Cranberry", "Stuffing", "Sweet Potatoes")) %>%
+  group_by(sales_value, month_name, thanksgiving_products) %>%
+  summarize(total_sales = sum(sales_value)) %>%
+  ggplot(aes(thanksgiving_products, total_sales)) +
+    geom_col(fill = "darkorange3") +
+    facet_wrap(~ month_name) +
+    scale_y_continuous(labels=scales::dollar_format()) +
+    labs(
+      title = "Thanksgiving Product Sales by Month",
+      x = 'Thanksgiving Products',
+      y = 'Total Sales') +
+    theme(axis.text.x = element_text(angle=45, vjust=1, hjust=1, size =6))
+
+```
+
+<br>
+
+#### Plot #4
+
+We wanted to check our findings against total sales per month for all products to see if our data was misleading due to sales being higher or lower based on the month. We thought that this could account for the lower meat sales, although we found the opposite to be true. We found that November was about average amount of sales and December being the highest so the lack of meat sales we expected for the holidays seems to be a matter of consumers shopping elsewhere to get their holiday meats.
+
+
+```{r setup, message=FALSE, warning=FALSE}
+
+transactions %>%
+  mutate(month = month(transaction_timestamp, label = TRUE)) %>%
+  group_by(month) %>%
+  summarise(total_sales=sum(sales_value)) %>%
+  ggplot(aes(x = month, y = total_sales, fill = month)) +
+  geom_col(show.legend = FALSE) +
+  scale_y_continuous(
+                     name = "Total Sales",
+                     breaks = c(300000, 325000, 350000,375000,400000,425000),
+                     labels = scales::dollar_format()) +
+  coord_cartesian(ylim = c(300000,425000)) +
+  scale_fill_manual(values = c("darkorange3", "darkorange3", "darkorange3", "darkorange3", "darkorange3", "darkorange3", "darkorange3", "darkorange3", "darkorange3", "darkorange3", "darkorange4", "darkorange3")) +
+  labs(
+    title = "Total Sales by Month",
+    x = "Month",
+    y = "Total Sales"
+  )
+  
+
+```
+  
+
+
+### Summary 
+
+When looking at how different types of meat sold depending on the time of year, we discovered that our turkey sales are significantly lower than what we expected them to be. We discovered this by joining the product and transaction data, and then using filtering and other data tidying techniques to get the relevant data visualized. Ultimately, what we found most interesting from our analysis was that turkey doesn't sell nearly as well as we expected during the Thanksgiving season, but other Thanksgiving-related products such as pies and stuffing do. What this means is that people are coming to Regork to buy all the sides to their Thanksgiving dinner, but are going elsewhere to get their turkey. This is backed up by looking at demographic data, which shows we are failing on getting larger households to buy turkeys from us in November. Clearly, we must re-examine how we are selling our turkeys during the Thanksgiving season. Some limitations of our analysis include how the products are classified and relatively small amount of data to work with. Some of the product types can be hard to determine if they should be included in our analysis or not, and it would be better to make assumptions from the meat sales data if sales were in the thousands instead of the hundreds, simply because confidence in data increases with the number of observations.
+
+
+
+
+
+
